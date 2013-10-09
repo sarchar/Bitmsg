@@ -35,7 +35,7 @@ class Callbacks:
 
         while len(self.seen_transactions_timeout) and now > (self.seen_transactions_timeout[0][1] + Callbacks.TX_TIMEOUT):
             tx_hash, _ = self.seen_transactions_timeout.popleft()
-            self.seen_transactions.pop(tx_hash)
+            self.seen_transactions.remove(tx_hash)
 
         return txhash not in self.seen_transactions
 
