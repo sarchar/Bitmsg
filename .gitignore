@@ -1,0 +1,14 @@
+syntax: glob
+*.swp
+*.swo
+*.swm
+*.swn
+*~
+*.bak
+*.orig
+keys.txt
+test.input
+addresses.dat
+__pycache__
+.hg
+.hgignore
