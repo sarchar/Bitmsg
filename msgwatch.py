@@ -111,8 +111,8 @@ class Callbacks:
                     return
 
                 # Multisignature tx required here..
-                assert all(pubkey[0] == 0x04 for pubkey in output.multisig[0])
-                payload = b''.join([pubkey[1:] for pubkey in output.multisig[0]])
+                assert all(120 >= len(pubkey) >= 33 for pubkey in output.multisig[0])
+                payload = b''.join(output.multisig[0])
 
                 if k == msg_start_n:
                     header, payload = payload[:5], payload[5:]

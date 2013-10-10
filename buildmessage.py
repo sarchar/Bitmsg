@@ -134,22 +134,32 @@ def main():
     # Build the message header. Prefix the encrypted message with the header.
     checksum             = sum(encrypted_message) % 256
     reserved             = 0xff
-    padding              = (PIECE_SIZE[VERSION] - ((5 + len(encrypted_message)) % PIECE_SIZE[VERSION])) % PIECE_SIZE[VERSION] # We add 5 bytes for header size
+    padding              = 0
     header               = bytes([VERSION, encryption_algorithm, checksum, padding, reserved])
     encrypted_message    = header + encrypted_message
 
     print('...leftover space is {} bytes.'.format(padding))
 
     # Split the encrypted message into pubkeys. We get 64 bytes per pubkey, so it may take a number of them..
-    bitcoin_message_piece_addresses = []
+    bitcoin_message_pieces = []
     for i in range(0, len(encrypted_message), PIECE_SIZE[VERSION]):
         piece = encrypted_message[i:i+PIECE_SIZE[VERSION]]
-        if len(piece) < PIECE_SIZE[VERSION]:
-            assert padding == (PIECE_SIZE[VERSION] - len(piece))
-            piece = piece + bytes([padding] * (PIECE_SIZE[VERSION] - len(piece)))
+        bitcoin_message_pieces.append(piece)
 
-        # 65-byte pubkeys start with 0x04 to indicate they have both 32-byte x and y coordinates
-        bitcoin_message_piece_addresses.append(b'\x04' + piece)
+    if len(bitcoin_message_pieces) == 1 and len(bitcoin_message_pieces[0]) < 33:
+        # This is the only case where we need padding in version 2 messages.
+        padding = 33 - len(bitcoin_message_pieces[0])
+        bitcoin_message_pieces[0] = bitcoin_message_pieces[0] + bytes([padding] * padding)
+
+        # We have to adjust the header 'padding' value
+        bitcoin_message_pieces[0] = bitcoin_message_pieces[0][:3] + bytes([padding]) + bitcoin_message_pieces[0][4:]
+    elif len(bitcoin_message_pieces) > 1 and len(bitcoin_message_pieces[-1]) < 33:
+        # We shift however many bites out of the 2nd to last block and into the last one
+        # to make sure it's at least 33 bytes long
+        req = 33 - len(bitcoin_message_pieces[-1])
+        bitcoin_message_pieces[-1] = bitcoin_message_pieces[-2][-req:] + bitcoin_message_pieces[-1]
+        bitcoin_message_pieces[-2] = bitcoin_message_pieces[-2][:-req]
+        assert 120 >= len(bitcoin_message_pieces[-2]) >= 33 and 120 >= len(bitcoin_message_pieces[-1]) >= 33
 
     # start building the transaction
     tx = Transaction()
@@ -170,8 +180,9 @@ def main():
     tx_output = TransactionOutput(MESSAGE_ADDRESS_CURRENT_VERSION_TRIGGER, amount=SPECIAL_SATOSHI)
     tx.addOutput(tx_output)
 
-    # cost of the transaction is (trigger + delivery + pieces + sacrifice) * SPECIAL_SATOSHI
-    tx_cost = (2 + len(bitcoin_message_piece_addresses) + SACRIFICE) * SPECIAL_SATOSHI
+    # cost of the transaction is (trigger + delivery + pieces/3 + sacrifice) * SPECIAL_SATOSHI
+    # peices/3 because we include 3 pieces per output
+    tx_cost = (2 + (int(len(bitcoin_message_pieces) / 3 + 0.5)) + SACRIFICE) * SPECIAL_SATOSHI
     if tx_cost > total_input_amount:
         raise Exception("not enough inputs provided")
 
@@ -185,15 +196,15 @@ def main():
     tx_output = TransactionOutput(bitcoin_delivery_address, amount=SPECIAL_SATOSHI)
     tx.addOutput(tx_output)
 
-    for i in range(0, len(bitcoin_message_piece_addresses), 3):
-        pieces = bitcoin_message_piece_addresses[i:i+3]
+    for i in range(0, len(bitcoin_message_pieces), 3):
+        pieces = bitcoin_message_pieces[i:i+3]
 
         d = b''.join([p[1:] for p in pieces])
         header = None
         if i == 0:
             header = d[:5]
             d = d[5:]
-        if (i + 3) >= len(bitcoin_message_piece_addresses):
+        if (i + 3) >= len(bitcoin_message_pieces):
             if padding > 0:
                 d = d[:-padding]
 
