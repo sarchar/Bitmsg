@@ -16,8 +16,14 @@ class TransactionOutput:
 
     def __init__(self, address=None, amount=0):
         self.amount = amount
-        self.address = base58.decode_to_bytes(address)[-24:-4] if address is not None else b''
+        self.address = base58.decode_to_bytes(address)[-24:-4] if address is not None else None
+        self.multisig = None
 
+        self.scriptPubKey = None
+
+    def setMultisig(self, pubkeys, required_signatures):
+        self.multisig     = (pubkeys, required_signatures)
+        self.address      = None
         self.scriptPubKey = None
 
     def createOutputScript(self):
@@ -27,11 +33,21 @@ class TransactionOutput:
         self.scriptPubKey = Script()
         self.scriptPubKey.clear()
 
-        self.scriptPubKey.pushOp(OP_DUP)
-        self.scriptPubKey.pushOp(OP_HASH160)
-        self.scriptPubKey.pushData(self.address)
-        self.scriptPubKey.pushOp(OP_EQUALVERIFY)
-        self.scriptPubKey.pushOp(OP_CHECKSIG)
+        if self.multisig is not None:
+            self.scriptPubKey.pushOp(OP_1 + self.multisig[1] - 1)
+            for key in self.multisig[0]:
+                self.scriptPubKey.pushData(key)
+            assert len(self.multisig[0]) <= 16
+            self.scriptPubKey.pushOp(OP_1 + len(self.multisig[0]) - 1)
+            self.scriptPubKey.pushOp(OP_CHECKMULTISIG)
+            #self.scriptPubKey.pushOp(OP_VERIFY)
+        else:
+            assert self.address is not None
+            self.scriptPubKey.pushOp(OP_DUP)
+            self.scriptPubKey.pushOp(OP_HASH160)
+            self.scriptPubKey.pushData(self.address)
+            self.scriptPubKey.pushOp(OP_EQUALVERIFY)
+            self.scriptPubKey.pushOp(OP_CHECKSIG)
 
     def extractAddressFromOutputScript(self):
         self.address = None
@@ -46,6 +62,12 @@ class TransactionOutput:
             self.scriptPubKey.program[2][0] == OP_CHECKSIG:
                 if self.scriptPubKey.program[2][0] in (0x04, 0x03, 0x02):
                     self.address = base58.decode_to_bytes(addressgen.generate_address(self.scriptPubKey.program[1]))[-24:-4]
+        elif self.scriptPubKey.program[-1][0] == OP_CHECKMULTISIG:
+            nreq = self.scriptPubKey.program[0][0] - OP_1 + 1
+            nkeys = self.scriptPubKey.program[-2][0] - OP_1 + 1
+            if nreq >= 1 and nreq <= nkeys:
+                pubkeys = [self.scriptPubKey.program[2 + i * 2] for i in range(nkeys)]
+                self.multisig = (pubkeys, nreq)
 
     def serializeForSignature(self, hashType):
         return self.serialize()

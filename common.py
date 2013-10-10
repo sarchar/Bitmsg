@@ -1,14 +1,20 @@
 import addressgen
 import ctypes
 
-VERSION = 1
+VERSION = 2
 
 # By using a hash for the trigger address, you can be sure that I don't have the private key
 # and can't spend the Satoshis.
-MESSAGE_ADDRESS_TRIGGER = addressgen.generate_address_from_data('MESSAGE {}'.format(VERSION).encode('ascii'), version=0)
+MESSAGE_ADDRESS_TRIGGERS = {
+    addressgen.generate_address_from_data('MESSAGE {}'.format(v).encode('ascii'), version=0): v
+    for v in range(1, VERSION+1)
+}
+
+MESSAGE_ADDRESS_CURRENT_VERSION_TRIGGER = addressgen.generate_address_from_data('MESSAGE {}'.format(VERSION).encode('ascii'), version=0)
+
 SPECIAL_SATOSHI = 1
 SACRIFICE       = 21000
-PIECE_SIZE      = 20 
+PIECE_SIZE      = { 1: 20, 2: 64 }
 
 ENCRYPT_NONE  = 0
 ENCRYPT_RC4   = 1

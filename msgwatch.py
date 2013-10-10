@@ -54,7 +54,8 @@ class Callbacks:
             return
 
         output0 = tx.outputs[0]
-        if output0.getBitcoinAddress() != MESSAGE_ADDRESS_TRIGGER:
+        version = MESSAGE_ADDRESS_TRIGGERS.get(output0.getBitcoinAddress(), None)
+        if version is None:
             return
 
         print('tx {} is for bitmsg'.format(Bitcoin.bytes_to_hexstring(tx_hash)))
@@ -76,31 +77,62 @@ class Callbacks:
         # build the msg content
         header = None
         msg = []
-        for k in range(msg_start_n, len(tx.outputs)):
-            output = tx.outputs[k]
-            payload = base58.decode_to_bytes(output.getBitcoinAddress())[1:-4]
 
-            if k == msg_start_n:
-                # First five bytes are the header
-                header, payload = payload[:5], payload[5:]
+        if version == 1:
+            for k in range(msg_start_n, len(tx.outputs)):
+                output = tx.outputs[k]
+                payload = base58.decode_to_bytes(output.getBitcoinAddress())[1:-4]
 
-                if (header[1] & 0x7f) != algorithm:
-                    # We can't decrypt this, says the header. The encryption algorithm doesn't match.
-                    return
+                if k == msg_start_n:
+                    # First five bytes are the header
+                    header, payload = payload[:5], payload[5:]
 
-                if header[4] != 0xff:
-                    # TODO - handle reserved bits
-                    return
-
-            if k == len(tx.outputs) - 1:
-                if header[3] != 0:
-                    if header[3] >= PIECE_SIZE:
-                        # Invalid padding
+                    if (header[1] & 0x7f) != algorithm:
+                        # We can't decrypt this, says the header. The encryption algorithm doesn't match.
                         return
-                    payload = payload[:-header[3]]
-                pass
 
-            msg.append(payload)
+                    if header[4] != 0xff:
+                        # TODO - handle reserved bits
+                        return
+
+                if k == len(tx.outputs) - 1:
+                    if header[3] != 0:
+                        if header[3] >= PIECE_SIZE[version]:
+                            # Invalid padding
+                            return
+                        payload = payload[:-header[3]]
+                    pass
+
+                msg.append(payload)
+        elif version == 2:
+            for k in range(msg_start_n, len(tx.outputs)):
+                output = tx.outputs[k]
+                if output.multisig is None or output.multisig[1] != 1:
+                    return
+
+                # Multisignature tx required here..
+                assert all(pubkey[0] == 0x04 for pubkey in output.multisig[0])
+                payload = b''.join([pubkey[1:] for pubkey in output.multisig[0]])
+
+                if k == msg_start_n:
+                    header, payload = payload[:5], payload[5:]
+
+                    if (header[1] & 0x7f) != algorithm:
+                        # We can't decrypt this, says the header. The encryption algorithm doesn't match.
+                        return
+
+                    if header[4] != 0xff:
+                        # TODO - handle reserved bits
+                        return
+                        
+                if k == len(tx.outputs) - 1:
+                    if header[3] != 0:
+                        if header[3] >= PIECE_SIZE[version]:
+                            # Invalid padding
+                            return
+                        payload = payload[:-header[3]]
+
+                msg.append(payload)
 
         if header is None:
             return
@@ -147,7 +179,7 @@ def main():
     if done:
         return
 
-    print('The Bitmsg trigger address is {}'.format(MESSAGE_ADDRESS_TRIGGER))
+    print('The Bitmsg trigger address is {}'.format(MESSAGE_ADDRESS_CURRENT_VERSION_TRIGGER))
 
     # start network thread
     bitcoin_network = BitcoinNetwork(cb)

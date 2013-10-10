@@ -134,26 +134,22 @@ def main():
     # Build the message header. Prefix the encrypted message with the header.
     checksum             = sum(encrypted_message) % 256
     reserved             = 0xff
-    padding              = (PIECE_SIZE - ((5 + len(encrypted_message)) % PIECE_SIZE)) % PIECE_SIZE # We add 5 bytes for header size
+    padding              = (PIECE_SIZE[VERSION] - ((5 + len(encrypted_message)) % PIECE_SIZE[VERSION])) % PIECE_SIZE[VERSION] # We add 5 bytes for header size
     header               = bytes([VERSION, encryption_algorithm, checksum, padding, reserved])
     encrypted_message    = header + encrypted_message
 
     print('...leftover space is {} bytes.'.format(padding))
 
-    # Split the encrypted message into addresses. We get 20 bytes per address, so it may take a number of addresses..
+    # Split the encrypted message into pubkeys. We get 64 bytes per pubkey, so it may take a number of them..
     bitcoin_message_piece_addresses = []
-    for i in range(0, len(encrypted_message), PIECE_SIZE):
-        piece = encrypted_message[i:i+PIECE_SIZE]
-        if len(piece) < PIECE_SIZE:
-            assert padding == (PIECE_SIZE - len(piece))
-            piece = piece + bytes([padding] * (PIECE_SIZE - len(piece)))
+    for i in range(0, len(encrypted_message), PIECE_SIZE[VERSION]):
+        piece = encrypted_message[i:i+PIECE_SIZE[VERSION]]
+        if len(piece) < PIECE_SIZE[VERSION]:
+            assert padding == (PIECE_SIZE[VERSION] - len(piece))
+            piece = piece + bytes([padding] * (PIECE_SIZE[VERSION] - len(piece)))
 
-        j = 0
-        while piece[j] == 0: 
-            j += 1
-
-        bitcoin_piece_address = '1' + ('1' * j) + addressgen.base58_check(piece, version=0)
-        bitcoin_message_piece_addresses.append(bitcoin_piece_address)
+        # 65-byte pubkeys start with 0x04 to indicate they have both 32-byte x and y coordinates
+        bitcoin_message_piece_addresses.append(b'\x04' + piece)
 
     # start building the transaction
     tx = Transaction()
@@ -170,8 +166,8 @@ def main():
         tx.addInput(tx_input)
 
     # setup the outputs
-    print('...output (trigger)  0 to {}'.format(MESSAGE_ADDRESS_TRIGGER))
-    tx_output = TransactionOutput(MESSAGE_ADDRESS_TRIGGER, amount=SPECIAL_SATOSHI)
+    print('...output (trigger)  0 to {}'.format(MESSAGE_ADDRESS_CURRENT_VERSION_TRIGGER))
+    tx_output = TransactionOutput(MESSAGE_ADDRESS_CURRENT_VERSION_TRIGGER, amount=SPECIAL_SATOSHI)
     tx.addOutput(tx_output)
 
     # cost of the transaction is (trigger + delivery + pieces + sacrifice) * SPECIAL_SATOSHI
@@ -189,19 +185,21 @@ def main():
     tx_output = TransactionOutput(bitcoin_delivery_address, amount=SPECIAL_SATOSHI)
     tx.addOutput(tx_output)
 
-    for k, p in enumerate(bitcoin_message_piece_addresses):
-        d = base58.decode_to_bytes(p)[1:-4]
+    for i in range(0, len(bitcoin_message_piece_addresses), 3):
+        pieces = bitcoin_message_piece_addresses[i:i+3]
+
+        d = b''.join([p[1:] for p in pieces])
         header = None
-        if k == 0:
+        if i == 0:
             header = d[:5]
             d = d[5:]
-        if k == len(bitcoin_message_piece_addresses) - 1:
-            j = len(d) - 1
-            while j >= 0 and d[j] == 0:
-                j -= 1
-            d = d[:j+1]
-        print('...output (message)  {} to {} ({}bytes={})'.format(k+3, p, 'header={}, '.format(header) if header is not None else '', d))
-        tx_output = TransactionOutput(p, amount=SPECIAL_SATOSHI)
+        if (i + 3) >= len(bitcoin_message_piece_addresses):
+            if padding > 0:
+                d = d[:-padding]
+
+        print('...output (message) {} to multisig 1-of-{} ({}bytes={})'.format(3+i//3, len(pieces), 'header={}, '.format(header) if header is not None else '', d))
+        tx_output = TransactionOutput(amount=SPECIAL_SATOSHI)
+        tx_output.setMultisig(pieces, 1)
         tx.addOutput(tx_output)
 
     # sign all inputs
