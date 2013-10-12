@@ -98,10 +98,16 @@ def main():
     encryption_key = input('...Enter an encryption key (leave blank for no encryption): ')
     if len(encryption_key) == 0:
         encryption_key = b'\x00'
-        encryption_algorithm = 0
+        encryption_algorithm = ENCRYPT_NONE
     else:
         encryption_key = encryption_key.encode('utf8')
-        encryption_algorithm = 1
+        encryption_algorithm = ENCRYPT_AES128
+
+        if len(encryption_key) != 16 and '-rc4' not in sys.argv:
+            print('...ERROR: key must be length of 16 bytes. If you want to use RC4 (variable key length), pass -rc4 on the command-line.')
+            return
+        elif '-rc4' in sys.argv:
+            encryption_algorithm = ENCRYPT_RC4
 
     bitcoin_delivery_address = addressgen.generate_address_from_data(encryption_key, version=0)
     print('...Message delivery to: {}'.format(bitcoin_delivery_address))
@@ -127,8 +133,17 @@ def main():
     else:
         print('throwing away.')
 
+    # Setup the initialization vector using the first input's transaction id
+    if (encryption_algorithm & 0x7f) == ENCRYPT_AES128:
+        first_input = unspent_outputs[selected_inputs[0]]
+        first_input_tx_hash = Bitcoin.hexstring_to_bytes(first_input['tx_hash'], reverse=False)
+        iv = int.from_bytes(first_input_tx_hash, 'big')
+        iv = (iv % (1 << 128)).to_bytes(16, 'big')
+    else:
+        iv = None
+
     # Encrypt the message
-    encrypted_message = encrypt(encryption_key, message, algorithm=(encryption_algorithm & 0x7f))
+    encrypted_message = encrypt(encryption_key, message, algorithm=(encryption_algorithm & 0x7f), iv=iv)
     print('...Encrypted message is {} bytes'.format(len(encrypted_message)))
 
     # Build the message header. Prefix the encrypted message with the header.

@@ -30,6 +30,11 @@ class Callbacks:
         address = addressgen.generate_address_from_data(key, version=0)
         self.watched_addresses[address] = (ENCRYPT_RC4, key)
 
+    def watch_aes128(self, key):
+        # Hash the key and add to watched addresses
+        address = addressgen.generate_address_from_data(key, version=0)
+        self.watched_addresses[address] = (ENCRYPT_AES128, key)
+
     def will_request_transaction(self, txhash):
         now = time.time()
 
@@ -108,8 +113,15 @@ class Callbacks:
         if header is None:
             return
 
+        # Determine the IV based on the first input
+        input0 = tx.inputs[0]
+        if (algorithm & 0x7f) == ENCRYPT_AES128:
+            iv = (int.from_bytes(input0.tx_hash, 'big') % (1 << 128)).to_bytes(16, 'big')
+        else:
+            iv = None
+
         msg = b''.join(msg)
-        decrypted_message = decrypt(key, msg, algorithm)
+        decrypted_message = decrypt(key, msg, algorithm & 0x7f, iv=iv)
 
         if header[1] & 0x80:
             # Message is compressed
@@ -136,6 +148,9 @@ def main():
         if c == '-w':
             i += 1
             cb.watch_rc4(sys.argv[i].encode('utf8'))
+        elif c == '-a':
+            i += 1
+            cb.watch_aes128(sys.argv[i].encode('utf8'))
         elif c == '-p':
             cb.watch_public()
         elif c == '-t':
