@@ -250,7 +250,11 @@ class BitcoinNetwork(threading.Thread):
             if txhash in self.transaction_request_pool:
                 self.transaction_request_pool.pop(txhash)
 
-            self.callbacks.got_transaction(tx)
+            try:
+                self.callbacks.got_transaction(tx)
+            except:
+                print('error processing transaction:')
+                traceback.print_exc()
 
 class BitcoinNetworkPeer(threading.Thread):
     STATE_DEAD = -1

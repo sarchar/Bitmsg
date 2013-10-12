@@ -53,86 +53,57 @@ class Callbacks:
         if len(tx.outputs) < 3:
             return
 
-        output0 = tx.outputs[0]
-        version = MESSAGE_ADDRESS_TRIGGERS.get(output0.getBitcoinAddress(), None)
-        if version is None:
-            return
-
-        print('tx {} is for bitmsg'.format(Bitcoin.bytes_to_hexstring(tx_hash)))
-
+        delivery = tx.outputs[0]
+        delivery_address = delivery.getBitcoinAddress()
         msg_start_n = 1
-        while True:
-            if msg_start_n >= len(tx.outputs):
-                # Invalid message
+        if delivery_address not in self.watched_addresses:
+            if len(tx.outputs) == 1:
                 return
 
-            msg_start = tx.outputs[msg_start_n]
-            msg_start_n += 1
+            delivery = tx.outputs[1]
+            delivery_address = delivery.getBitcoinAddress()
+            if delivery_address not in self.watched_addresses:
+                return
 
-            v = self.watched_addresses.get(msg_start.getBitcoinAddress(), None)
-            if v is not None:
-                algorithm, key = v
-                break
+            msg_start_n = 2
+
+        algorithm, key = self.watched_addresses[delivery_address]
+        print('tx {} is for bitmsg'.format(Bitcoin.bytes_to_hexstring(tx_hash)))
 
         # build the msg content
         header = None
         msg = []
 
-        if version == 1:
-            for k in range(msg_start_n, len(tx.outputs)):
-                output = tx.outputs[k]
-                payload = base58.decode_to_bytes(output.getBitcoinAddress())[1:-4]
+        for k in range(msg_start_n, len(tx.outputs)):
+            output = tx.outputs[k]
+            if output.multisig is None or output.multisig[1] != 1:
+                return
 
-                if k == msg_start_n:
-                    # First five bytes are the header
-                    header, payload = payload[:5], payload[5:]
+            # Multisignature tx required here..
+            assert all(120 >= len(pubkey) >= 33 for pubkey in output.multisig[0])
+            payload = b''.join(k[1:] for k in output.multisig[0])
 
-                    if (header[1] & 0x7f) != algorithm:
-                        # We can't decrypt this, says the header. The encryption algorithm doesn't match.
-                        return
+            if k == msg_start_n:
+                header, payload = payload[:5], payload[5:]
 
-                    if header[4] != 0xff:
-                        # TODO - handle reserved bits
-                        return
+                version = header[0]
 
-                if k == len(tx.outputs) - 1:
-                    if header[3] != 0:
-                        if header[3] >= PIECE_SIZE[version]:
-                            # Invalid padding
-                            return
-                        payload = payload[:-header[3]]
-                    pass
-
-                msg.append(payload)
-        elif version == 2:
-            for k in range(msg_start_n, len(tx.outputs)):
-                output = tx.outputs[k]
-                if output.multisig is None or output.multisig[1] != 1:
+                if (header[1] & 0x7f) != algorithm:
+                    # We can't decrypt this, says the header. The encryption algorithm doesn't match.
                     return
 
-                # Multisignature tx required here..
-                assert all(120 >= len(pubkey) >= 33 for pubkey in output.multisig[0])
-                payload = b''.join(k[1:] for k in output.multisig[0])
-
-                if k == msg_start_n:
-                    header, payload = payload[:5], payload[5:]
-
-                    if (header[1] & 0x7f) != algorithm:
-                        # We can't decrypt this, says the header. The encryption algorithm doesn't match.
-                        return
-
-                    if header[4] != 0xff:
-                        # TODO - handle reserved bits
-                        return
+                if header[4] != 0xff:
+                    # TODO - handle reserved bits
+                    return
                         
-                if k == len(tx.outputs) - 1:
-                    if header[3] != 0:
-                        if header[3] >= PIECE_SIZE[version]:
-                            # Invalid padding
-                            return
-                        payload = payload[:-header[3]]
+            if k == len(tx.outputs) - 1:
+                if header[3] != 0:
+                    if header[3] >= PIECE_SIZE[version]:
+                        # Invalid padding
+                        return
+                    payload = payload[:-header[3]]
 
-                msg.append(payload)
+            msg.append(payload)
 
         if header is None:
             return
@@ -144,7 +115,7 @@ class Callbacks:
             # Message is compressed
             decrypted_message = gzip.decompress(decrypted_message)
 
-        print('-----Begin message to {}-----'.format(msg_start.getBitcoinAddress()))
+        print('-----Begin message to {}-----'.format(delivery_address))
         try:
             sys.stdout.write(decrypted_message.decode('utf8'))
         except UnicodeDecodeError:
@@ -179,7 +150,8 @@ def main():
     if done:
         return
 
-    print('The Bitmsg trigger address is {}'.format(MESSAGE_ADDRESS_CURRENT_VERSION_TRIGGER))
+    for addr in cb.watched_addresses.keys():
+        print('Watching for messages to {}'.format(addr))
 
     # start network thread
     bitcoin_network = BitcoinNetwork(cb)

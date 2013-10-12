@@ -174,24 +174,23 @@ def main():
         print('...input {} is {} BTC from {}'.format(n, Bitcoin.format_money(unspent['value']), bitcoin_input_address))
         tx.addInput(tx_input)
 
-    # setup the outputs
-    print('...output (trigger)  0 to {}'.format(MESSAGE_ADDRESS_CURRENT_VERSION_TRIGGER))
-    tx_output = TransactionOutput(MESSAGE_ADDRESS_CURRENT_VERSION_TRIGGER, amount=SPECIAL_SATOSHI)
-    tx.addOutput(tx_output)
+    # setup the outputs. a trigger address isn't really needed, since the encryption
+    # key can actually be used as the trigger (only those interested will be able to find
+    # the message, anyway)
 
-    # cost of the transaction is (trigger + delivery + pieces/3 + sacrifice) * SPECIAL_SATOSHI
+    # cost of the transaction is (target + pieces/3 + sacrifice) * SPECIAL_SATOSHI
     # peices/3 because we include 3 pieces per output
-    tx_cost = (2 + (int(len(bitcoin_message_pieces) / 3 + 0.5)) + SACRIFICE) * SPECIAL_SATOSHI
+    tx_cost = (1 + (int(len(bitcoin_message_pieces) / 3 + 0.5)) + SACRIFICE) * SPECIAL_SATOSHI
     if tx_cost > total_input_amount:
         raise Exception("not enough inputs provided")
 
     if total_input_amount > tx_cost:
-        print('...output (change)   1 to {}'.format(bitcoin_change_address))
+        print('...output (change)   0 to {}'.format(bitcoin_change_address))
         tx_output = TransactionOutput(bitcoin_change_address, amount=total_input_amount - tx_cost)
         tx.addOutput(tx_output)
 
     # The recipient will know how to handle this if they see their key...
-    print('...output (delivery) 2 to {}'.format(bitcoin_delivery_address))
+    print('...output (target) 1 to {}'.format(bitcoin_delivery_address))
     tx_output = TransactionOutput(bitcoin_delivery_address, amount=SPECIAL_SATOSHI)
     tx.addOutput(tx_output)
 
@@ -207,7 +206,7 @@ def main():
             if padding > 0:
                 d = d[:-padding]
 
-        print('...output (message) {} to multisig 1-of-{} ({}bytes={})'.format(3+i//3, len(pieces), 'header={}, '.format(header) if header is not None else '', d))
+        print('...output (message) {} to multisig 1-of-{} ({}bytes={})'.format(2+i//3, len(pieces), 'header={}, '.format(header) if header is not None else '', d))
         tx_output = TransactionOutput(amount=SPECIAL_SATOSHI)
         tx_output.setMultisig(pieces, 1)
         tx.addOutput(tx_output)
