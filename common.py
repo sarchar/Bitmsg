@@ -14,7 +14,7 @@ MESSAGE_ADDRESS_CURRENT_VERSION_TRIGGER = addressgen.generate_address_from_data(
 
 SPECIAL_SATOSHI = 1
 SACRIFICE       = 21000
-PIECE_SIZE      = { 1: 20, 2: 120 }
+PIECE_SIZE      = { 1: 20, 2: 119 }
 
 ENCRYPT_NONE  = 0
 ENCRYPT_RC4   = 1

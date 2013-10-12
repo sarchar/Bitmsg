@@ -112,7 +112,7 @@ class Callbacks:
 
                 # Multisignature tx required here..
                 assert all(120 >= len(pubkey) >= 33 for pubkey in output.multisig[0])
-                payload = b''.join(output.multisig[0])
+                payload = b''.join(k[1:] for k in output.multisig[0])
 
                 if k == msg_start_n:
                     header, payload = payload[:5], payload[5:]

@@ -138,13 +138,12 @@ def main():
     header               = bytes([VERSION, encryption_algorithm, checksum, padding, reserved])
     encrypted_message    = header + encrypted_message
 
-    print('...leftover space is {} bytes.'.format(padding))
-
-    # Split the encrypted message into pubkeys. We get 64 bytes per pubkey, so it may take a number of them..
+    # Split the encrypted message into pubkeys. We get 119 bytes per pubkey (we reserve
+    # the first byte in case any future changes to bitcoind require a valid pubkey)
     bitcoin_message_pieces = []
     for i in range(0, len(encrypted_message), PIECE_SIZE[VERSION]):
         piece = encrypted_message[i:i+PIECE_SIZE[VERSION]]
-        bitcoin_message_pieces.append(piece)
+        bitcoin_message_pieces.append(b'\xff' + piece)
 
     if len(bitcoin_message_pieces) == 1 and len(bitcoin_message_pieces[0]) < 33:
         # This is the only case where we need padding in version 2 messages.
@@ -152,12 +151,12 @@ def main():
         bitcoin_message_pieces[0] = bitcoin_message_pieces[0] + bytes([padding] * padding)
 
         # We have to adjust the header 'padding' value
-        bitcoin_message_pieces[0] = bitcoin_message_pieces[0][:3] + bytes([padding]) + bitcoin_message_pieces[0][4:]
+        bitcoin_message_pieces[0] = bitcoin_message_pieces[0][:4] + bytes([padding]) + bitcoin_message_pieces[0][5:]
     elif len(bitcoin_message_pieces) > 1 and len(bitcoin_message_pieces[-1]) < 33:
-        # We shift however many bites out of the 2nd to last block and into the last one
+        # We shift however many bytes out of the 2nd to last block and into the last one
         # to make sure it's at least 33 bytes long
         req = 33 - len(bitcoin_message_pieces[-1])
-        bitcoin_message_pieces[-1] = bitcoin_message_pieces[-2][-req:] + bitcoin_message_pieces[-1]
+        bitcoin_message_pieces[-1] = bytes([bitcoin_message_pieces[-1][0]]) + bitcoin_message_pieces[-2][-req:] + bitcoin_message_pieces[-1][1:]
         bitcoin_message_pieces[-2] = bitcoin_message_pieces[-2][:-req]
         assert 120 >= len(bitcoin_message_pieces[-2]) >= 33 and 120 >= len(bitcoin_message_pieces[-1]) >= 33
 

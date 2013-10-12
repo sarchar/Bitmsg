@@ -73,11 +73,14 @@ class TransactionOutput:
         return self.serialize()
 
     def getBitcoinAddress(self):
+        if self.address is None:
+            return None
+
         j = 0
         while self.address[j] == 0:
             j += 1
 
-        return ('1' + ('1' * j) + addressgen.base58_check(self.address)) if self.address is not None else None
+        return ('1' + ('1' * j) + addressgen.base58_check(self.address))
 
     def serialize(self):
         self.createOutputScript()
