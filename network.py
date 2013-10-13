@@ -363,6 +363,9 @@ class BitcoinNetworkPeer(threading.Thread):
     def check_for_messages(self):
         try:
             data = self.socket.recv(4096)
+        except ConnectionResetError:
+            self.state = BitcoinNetworkPeer.STATE_DEAD
+            return
         except socket.timeout:
             return
 
@@ -495,6 +498,10 @@ class BitcoinNetworkPeer(threading.Thread):
         if txhash in self.transaction_requests_in_progress:
             self.bitcoin_network.got_transaction(tx)
             self.transaction_requests_in_progress.pop(txhash)
+
+    def handle_notfound(self, payload):
+        print('got notfound')
+        pass
 
     def send_version(self):
         version  = self.bitcoin_network.client_version

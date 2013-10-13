@@ -34,10 +34,11 @@ transactions that are floating around.  The arguments to pass to msgwatch.py
 will help determine which messages you are able to receive.
 
 * -p : This will listen on the network for unencrypted, public messages.
-* -w key : This will listen on the network for encrypted (RC4), "chan" messages. You can specify '-w' multiple times.
+* -w key : This will listen on the network for encrypted (RC4) messages. You can specify '-w' multiple times.
+* -a key : This will listen on the network for encrypted (AES-128) messages. You can specify '-a' multiple times. AES-128 keys must be 16 bytes in length.
 
-For example, "python msgwatch.py -p -w general" will listen for messages that
-are encrypted with the phrase "general".
+For example, "python msgwatch.py -p -w general -a mysecretkeyhello" will listen for messages that
+are encrypted with RC4 using the phrase "general" and with AES-128 using mysecretkeyhello.
 
 TODO
 ====

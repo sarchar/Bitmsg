@@ -93,21 +93,38 @@ def main():
         bitcoin_change_address = bitcoin_input_address
         print('...Change address: {}'.format(bitcoin_change_address))
 
-    # We need a recipient:
-    print('\n*** Step 4. Provide an encryption key. The encryption key will be hashed and used as a Bitcoin address to designate the recipient. The current implementation uses RC4, so longer keys are better.')
-    encryption_key = input('...Enter an encryption key (leave blank for no encryption): ')
-    if len(encryption_key) == 0:
-        encryption_key = b'\x00'
-        encryption_algorithm = ENCRYPT_NONE
-    else:
-        encryption_key = encryption_key.encode('utf8')
-        encryption_algorithm = ENCRYPT_AES128
+    # Select an encryption method
+    while True:
+        print('\n*** Step 4a. Select an encryption method:')
+        print('...1. None (public message)')
+        print('...2. AES-128 (best)')
+        print('...3. RC4')
+        try:
+            i = int(input('? '))
+            if i == 1:
+                encryption_key = b'\x00'
+                encryption_algorithm = ENCRYPT_NONE
+            elif i == 2:
+                required_key_length_message = "AES-128 requires a key length of 16 bytes"
+                encryption_algorithm = ENCRYPT_AES128
+            elif i == 3:
+                required_key_length_message = "RC4 allows for variable-length keys, but longer is better"
+                encryption_algorithm = ENCRYPT_RC4
+            else:
+                continue
+            break
+        except ValueError:
+            continue
 
-        if len(encryption_key) != 16 and '-rc4' not in sys.argv:
-            print('...ERROR: key must be length of 16 bytes. If you want to use RC4 (variable key length), pass -rc4 on the command-line.')
+    if encryption_algorithm in (ENCRYPT_AES128, ENCRYPT_RC4):
+        print('\n*** Step 4b. Provide an encryption key. The encryption key will be hashed and used as a Bitcoin address to designate the recipient.')
+        encryption_key = input('...Enter an encryption key ({}): '.format(required_key_length_message)).encode('utf8')
+        if encryption_algorithm == ENCRYPT_AES128 and len(encryption_key) != 16:
+            print('...ERROR: key must have a length of 16 bytes.')
             return
-        elif '-rc4' in sys.argv:
-            encryption_algorithm = ENCRYPT_RC4
+        elif encryption_algorithm == ENCRYPT_RC4 and len(encryption_key) == 0:
+            print('...ERROR: key must not be empty')
+            return
 
     bitcoin_delivery_address = addressgen.generate_address_from_data(encryption_key, version=0)
     print('...Message delivery to: {}'.format(bitcoin_delivery_address))
@@ -131,7 +148,7 @@ def main():
         message = compressed_message
         encryption_algorithm |= 0x80
     else:
-        print('throwing away.')
+        print('not using because compressed version is larger.')
 
     # Setup the initialization vector using the first input's transaction id
     if (encryption_algorithm & 0x7f) == ENCRYPT_AES128:
@@ -221,7 +238,7 @@ def main():
             if padding > 0:
                 d = d[:-padding]
 
-        print('...output (message) {} to multisig 1-of-{} ({}bytes={})'.format(2+i//3, len(pieces), 'header={}, '.format(header) if header is not None else '', d))
+        print('...output (message) {} to multisig 1-of-{}{}'.format(2+i//3, len(pieces), ' (header={})'.format(header) if header is not None else ''))
         tx_output = TransactionOutput(amount=SPECIAL_SATOSHI)
         tx_output.setMultisig(pieces, 1)
         tx.addOutput(tx_output)
