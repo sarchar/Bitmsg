@@ -10,6 +10,7 @@ syntax: glob
 *.key
 keys.txt
 test.input
+test.py
 addresses.dat
 __pycache__
 .hg

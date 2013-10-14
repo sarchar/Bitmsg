@@ -157,6 +157,9 @@ class Callbacks:
                         return
                     rsa_private_key, key, header, encrypted_message = r
                     encryption_algorithm = header[1]
+
+                    # TODO - use some kind of hash/id of the private key?
+                    delivery_address = rsa_private_key
                 else:
                     return
             else:

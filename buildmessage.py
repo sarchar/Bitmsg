@@ -4,6 +4,7 @@ import gzip
 from http.client import HTTPConnection
 import json
 import math
+import mimetypes
 import os
 import sys
 import traceback
@@ -63,6 +64,29 @@ def push_transaction(serialized_tx):
             return "Unknown error"
 
 def main():
+    message = None
+
+    # Parse arguments first
+    i = 1
+    while i < len(sys.argv):
+        v = sys.argv[1]
+        if v == '-f':
+            assert message is None, "you can only specify -f once"
+            i += 1
+            data = open(sys.argv[i], 'rb').read()
+            mime_type, encoding = mimetypes.guess_type(sys.argv[i])
+
+            if mime_type is not None:
+                filename = os.path.basename(sys.argv[i])
+                message = '\n'.join([
+                    'Content-type: {}{}'.format(mime_type, '; charset={}'.format(encoding) if encoding is not None else ''),
+                    'Content-length: {}'.format(len(data)),
+                    'Content-disposition: attachment; filename={}'.format(filename),
+                ])
+                message = message.encode('utf8') + b'\n\n' + data
+
+        i += 1
+
     # Get coins for input
     print('*** Step 1. We need Bitcoins in order to send a message. Give me a Bitcoin private key (it starts with a 5...) to use as an input for the message transaction.')
     bitcoin_private_key = input('...Enter Bitcoin private key: ')
@@ -177,14 +201,18 @@ def main():
         print('... {}'.format(bitcoin_delivery_address))
 
     # Now we ask the user to enter a message
-    print('\n*** Step 5. Enter your message. End your message by entering \'.\' by itself on a new line.\n...Enter your message:\n')
-    lines = []
-    while True:
-        line = input()
-        if line == '.':
-            break
-        lines.append(line)
-    message = '\n'.join(lines).encode('utf8')
+    if message is None:
+        print('\n*** Step 5. Enter your message. End your message by entering \'.\' by itself on a new line.\n...Enter your message:\n')
+        lines = []
+        while True:
+            line = input()
+            if line == '.':
+                break
+            lines.append(line)
+        message = '\n'.join(lines).encode('utf8')
+
+        # Add some temporary headers
+        message = 'Content-type: text/plain; charset=utf-8\nContent-length: {}\n\n'.format(len(message)).encode('ascii') + message
 
     # Try compressing the message before encryption, this may waste CPU but it's in the interest
     # of saving some outputs in the transaction.
@@ -318,6 +346,8 @@ def main():
 
     # sign all inputs
     tx.sign()
+
+    print('...the transaction is {} bytes.'.format(len(tx.serialize())))
 
     # Finally, do something with the transaction
     print('\n*** Step 6. The transaction is built. What would you like to do with it?')
