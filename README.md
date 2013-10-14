@@ -45,8 +45,7 @@ TODO
 
 Some important tasks left to be done include:
 
-* Public/Private-key Encryption, ideally using ECDSA (ElGamal)
-* Message types: public-key broadcasts, message formats, etc.
+* Proper internet message formatting
 * Parsing blocks and blockchain for transactions that were missed while offline
 * Relaying blocks and transactions
 * More configurable things such as the amount to sacrifice
