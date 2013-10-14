@@ -3,6 +3,7 @@ import ctypes
 import gzip
 from http.client import HTTPConnection
 import json
+import math
 import os
 import sys
 import traceback
@@ -97,37 +98,83 @@ def main():
     while True:
         print('\n*** Step 4a. Select an encryption method:')
         print('...1. None (public message)')
-        print('...2. AES-128 (best)')
-        print('...3. RC4')
+        print('...2. RC4')
+        print('...3. AES-128')
+        print('...4. AES-256 (best)')
+        print('...5. RSA (public-key)')
         try:
             i = int(input('? '))
             if i == 1:
                 encryption_key = b'\x00'
                 encryption_algorithm = ENCRYPT_NONE
             elif i == 2:
-                required_key_length_message = "AES-128 requires a key length of 16 bytes"
-                encryption_algorithm = ENCRYPT_AES128
-            elif i == 3:
                 required_key_length_message = "RC4 allows for variable-length keys, but longer is better"
                 encryption_algorithm = ENCRYPT_RC4
+            elif i == 3:
+                required_key_length_message = "AES-128 requires a key length of 16 bytes"
+                encryption_algorithm = ENCRYPT_AES128
+            elif i == 4:
+                required_key_length_message = "AES-256 requires a key length of 32 bytes"
+                encryption_algorithm = ENCRYPT_AES256
+            elif i == 5:
+                required_key_length_message = "An RSA public-key is required"
+                encryption_algorithm = ENCRYPT_RSA
             else:
                 continue
             break
         except ValueError:
             continue
 
-    if encryption_algorithm in (ENCRYPT_AES128, ENCRYPT_RC4):
+    if encryption_algorithm in (ENCRYPT_AES128, ENCRYPT_AES256, ENCRYPT_RC4):
         print('\n*** Step 4b. Provide an encryption key. The encryption key will be hashed and used as a Bitcoin address to designate the recipient.')
         encryption_key = input('...Enter an encryption key ({}): '.format(required_key_length_message)).encode('utf8')
         if encryption_algorithm == ENCRYPT_AES128 and len(encryption_key) != 16:
             print('...ERROR: key must have a length of 16 bytes.')
             return
+        elif encryption_algorithm == ENCRYPT_AES256 and len(encryption_key) != 32:
+            print('...ERROR: key must have a length of 32 bytes.')
+            return
         elif encryption_algorithm == ENCRYPT_RC4 and len(encryption_key) == 0:
             print('...ERROR: key must not be empty')
             return
+    elif encryption_algorithm == ENCRYPT_RSA:
+        encryption_key = get_random_bytes(32)
+        encrypted_rsa_encryption_keys = []
+        while True:
+            print('\n*** Step 4b. Provide the public-key for a recipient (in PEM form):\n')
+            lines = []
+            while True:
+                line = input('')
+                lines.append(line)
+                if '-----END PUBLIC KEY-----' in line:
+                    break
+            public_key = load_public_key('\n'.join(lines))
 
-    bitcoin_delivery_address = addressgen.generate_address_from_data(encryption_key, version=0)
-    print('...Message delivery to: {}'.format(bitcoin_delivery_address))
+            # encrypt encryption key
+            encrypted_rsa_encryption_key = encrypt(public_key, encryption_key, algorithm=ENCRYPT_RSA)
+            encrypted_rsa_encryption_keys.append(struct.pack('<H', len(encrypted_rsa_encryption_key)) + encrypted_rsa_encryption_key)
+
+            answer = False
+            while True:
+                answer = input('...would you like to add another recipient? (y/N) ').strip().lower()
+                if answer in ('y', 'yes'):
+                    answer = True
+                    break
+                if answer in ('n', 'no', ''):
+                    answer = False
+                    break
+
+            if not answer:
+                break
+
+    if encryption_algorithm == ENCRYPT_RSA:
+        bitcoin_delivery_addresses = []
+    else:
+        bitcoin_delivery_addresses = [addressgen.generate_address_from_data(encryption_key, version=0)]
+
+    print('...Message delivery to:')
+    for bitcoin_delivery_address in bitcoin_delivery_addresses:
+        print('... {}'.format(bitcoin_delivery_address))
 
     # Now we ask the user to enter a message
     print('\n*** Step 5. Enter your message. End your message by entering \'.\' by itself on a new line.\n...Enter your message:\n')
@@ -156,11 +203,36 @@ def main():
         first_input_tx_hash = Bitcoin.hexstring_to_bytes(first_input['tx_hash'], reverse=False)
         iv = int.from_bytes(first_input_tx_hash, 'big')
         iv = (iv % (1 << 128)).to_bytes(16, 'big')
+    elif (encryption_algorithm & 0x7f) in (ENCRYPT_AES256, ENCRYPT_RSA):
+        # Bitcoin tx hashes are 32-bytes, so this is still OK for AES-256
+        first_input = unspent_outputs[selected_inputs[0]]
+        first_input_tx_hash = Bitcoin.hexstring_to_bytes(first_input['tx_hash'], reverse=False)
+        iv = int.from_bytes(first_input_tx_hash, 'big')
+        iv = (iv % (1 << 256)).to_bytes(32, 'big')
     else:
         iv = None
 
     # Encrypt the message
-    encrypted_message = encrypt(encryption_key, message, algorithm=(encryption_algorithm & 0x7f), iv=iv)
+    if (encryption_algorithm & 0x7f) == ENCRYPT_RSA:
+        encrypted_message = encrypt(encryption_key, message, algorithm=ENCRYPT_AES256, iv=iv)
+    else:
+        encrypted_message = encrypt(encryption_key, message, algorithm=(encryption_algorithm & 0x7f), iv=iv)
+
+    # With RSA, the encrypted keys are compressed separately
+    if (encryption_algorithm& 0x7f)  == ENCRYPT_RSA:
+        print('...Trying to compress the key block...', end='')
+        encrypted_key_block = b''.join(encrypted_rsa_encryption_keys)
+        compressed_encrypted_key_block = gzip.compress(encrypted_key_block)
+        if len(compressed_encrypted_key_block) < len(encrypted_key_block):
+            print('good!')
+            encrypted_key_block = b'\x80' + struct.pack('<L', len(compressed_encrypted_key_block)) + compressed_encrypted_key_block
+        else:
+            print('not using because compressed version is larger.')
+            encrypted_key_block = b'\x00' + struct.pack('<L', len(encrypted_key_block)) + encrypted_key_block
+
+        print('...Encrypted Key Block is {} bytes'.format(len(encrypted_key_block)))
+        encrypted_message = encrypted_key_block + encrypted_message
+
     print('...Encrypted message is {} bytes'.format(len(encrypted_message)))
 
     # Build the message header. Prefix the encrypted message with the header.
@@ -210,21 +282,22 @@ def main():
     # key can actually be used as the trigger (only those interested will be able to find
     # the message, anyway)
 
-    # cost of the transaction is (target + pieces/3 + sacrifice) * SPECIAL_SATOSHI
+    # cost of the transaction is (targets + pieces/3 + sacrifice) * SPECIAL_SATOSHI
     # peices/3 because we include 3 pieces per output
-    tx_cost = (1 + (int(len(bitcoin_message_pieces) / 3 + 0.5)) + SACRIFICE) * SPECIAL_SATOSHI
+    tx_cost = (len(bitcoin_delivery_addresses) + math.ceil(len(bitcoin_message_pieces) / 3) + SACRIFICE) * SPECIAL_SATOSHI
     if tx_cost > total_input_amount:
         raise Exception("not enough inputs provided")
 
     if total_input_amount > tx_cost:
-        print('...output (change)   0 to {}'.format(bitcoin_change_address))
+        print('...output (change) to {}'.format(bitcoin_change_address))
         tx_output = TransactionOutput(bitcoin_change_address, amount=total_input_amount - tx_cost)
         tx.addOutput(tx_output)
 
     # The recipient will know how to handle this if they see their key...
-    print('...output (target) 1 to {}'.format(bitcoin_delivery_address))
-    tx_output = TransactionOutput(bitcoin_delivery_address, amount=SPECIAL_SATOSHI)
-    tx.addOutput(tx_output)
+    for i, bitcoin_delivery_address in enumerate(bitcoin_delivery_addresses):
+        print('...output (target) to {}'.format(bitcoin_delivery_address))
+        tx_output = TransactionOutput(bitcoin_delivery_address, amount=SPECIAL_SATOSHI)
+        tx.addOutput(tx_output)
 
     for i in range(0, len(bitcoin_message_pieces), 3):
         pieces = bitcoin_message_pieces[i:i+3]
@@ -238,7 +311,7 @@ def main():
             if padding > 0:
                 d = d[:-padding]
 
-        print('...output (message) {} to multisig 1-of-{}{}'.format(2+i//3, len(pieces), ' (header={})'.format(header) if header is not None else ''))
+        print('...output (message) to multisig 1-of-{}{}'.format(len(pieces), ' (header={})'.format(header) if header is not None else ''))
         tx_output = TransactionOutput(amount=SPECIAL_SATOSHI)
         tx_output.setMultisig(pieces, 1)
         tx.addOutput(tx_output)

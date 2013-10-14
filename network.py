@@ -203,6 +203,8 @@ class BitcoinNetwork(threading.Thread):
         for address in peers:
             if address in self.peer_connections:
                 continue
+            if ':' not in address:
+                continue
             p = self.peer_addresses[address]
 
             # Wait between connection attempts
@@ -264,8 +266,8 @@ class BitcoinNetworkPeer(threading.Thread):
 
     def __init__(self, bitcoin_network, peer_address):
         threading.Thread.__init__(self)
-        self.bitcoin_network  = bitcoin_network
-        self.peer_address     = peer_address
+        self.bitcoin_network = bitcoin_network
+        self.peer_address    = peer_address
         self.state           = BitcoinNetworkPeer.STATE_DEAD
         self.running         = False
         self.connection_time = 0

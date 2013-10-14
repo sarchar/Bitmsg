@@ -6,6 +6,8 @@ syntax: glob
 *~
 *.bak
 *.orig
+*.pub
+*.key
 keys.txt
 test.input
 addresses.dat
