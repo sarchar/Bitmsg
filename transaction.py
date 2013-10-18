@@ -77,7 +77,7 @@ class TransactionOutput:
             return None
 
         j = 0
-        while self.address[j] == 0:
+        while j < len(self.address) and self.address[j] == 0:
             j += 1
 
         return ('1' + ('1' * j) + addressgen.base58_check(self.address))
@@ -239,6 +239,8 @@ class Transaction:
     CHECK_NONSTANDARD = 2
     CHECK_INVALID = 3
 
+    MIN_TX_FEE = 10000
+
     def __init__(self, transactionType=TRANSACTION_TYPE_PAYMENT_NORMAL):
         self.version = Transaction.CURRENT_VERSION
         self.lock_time = 0
@@ -264,6 +266,13 @@ class Transaction:
                 i.clearScriptSig()
 
         return r
+
+    def removeOutput(self, n):
+        self.outputs = self.outputs[:n] + self.outputs[n+1:]
+        if self.type == Transaction.TRANSACTION_TYPE_PAYMENT_NORMAL:
+            # Outputs changed, clear signatures
+            for i in self.inputs:
+                i.clearScriptSig()
 
     def setOutputAmount(self, index, amount):
         self.outputs[index].amount = amount
@@ -373,21 +382,14 @@ class Transaction:
     def size(self):
         return len(self.serialize())
 
-    def getRecommendedTransactionFee(self):
+    def getRecommendedTransactionFee(self, per_kb=MIN_TX_FEE):
         # TB - This is ripped off from bitcoind, main.cpp, GetMinFee
 
         # TB TODO - Regular TX vs relay TX
-        MIN_TX_FEE = 10000
-        MIN_RELAY_TX_FEE = 10000
-        base_fee = MIN_TX_FEE
+        base_fee = per_kb
 
-        bytes = self.size()
-        min_fee = (1 + (bytes / 1000)) * base_fee
-
-        allow_free = False
-        if allow_free:
-            # TB TODO Do we care about free transaction area in blocks?
-            pass
+        # Why did bitcoind use 1000 instead of 1024?!
+        min_fee = (1 + (self.size() / 1000)) * base_fee
 
         # To limit dust spam, require base fee if any output is less than 0.01 
         if min_fee < base_fee:

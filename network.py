@@ -27,7 +27,7 @@ class BitcoinNetwork(threading.Thread):
     MINIMUM_PEER_ADDRESS_COUNT = 200
 
     ADDRESS_FILE = 'addresses.dat'
-    DEFAULT_NUM_PEERS = int(sys.argv[sys.argv.index('-numpeers')+1]) if '-numpeers' in sys.argv else 10
+    DEFAULT_NUM_PEERS = 10
     DEFAULT_PORT = 8333
     DEFAULT_USER_AGENT = '/Satoshi:0.7.2/'
     DEFAULT_SEED_ADDR_TIMEOUT = 3*60*60
@@ -112,6 +112,9 @@ class BitcoinNetwork(threading.Thread):
             self.filter_timed_out_peers()
             self.save_addresses()
             self.last_addresses_save_time = now
+
+    def count_fully_connected_peers(self):
+        return sum(1 if p.version_ack else 0 for p in self.peer_connections.values())
 
     def filter_timed_out_peers(self):
         if len(self.peer_addresses) <= BitcoinNetwork.MINIMUM_PEER_ADDRESS_COUNT:
@@ -271,6 +274,7 @@ class BitcoinNetworkPeer(threading.Thread):
         self.state           = BitcoinNetworkPeer.STATE_DEAD
         self.running         = False
         self.connection_time = 0
+        self.version_ack     = False
 
         self.COMMAND_TABLE = {}
         for v in dir(self):
@@ -297,7 +301,6 @@ class BitcoinNetworkPeer(threading.Thread):
         self.state = BitcoinNetworkPeer.STATE_INIT
         self.bad_peer = False # Set to True to tell the manager that the peer is someone we should wait some time before reconnecting again
         self.socket = None
-        self.version_ack = False
         self.known_transactions = set()
         self.transaction_requests_in_progress = {}
         self.peer_last_block = 0

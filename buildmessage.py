@@ -312,14 +312,17 @@ def main():
 
     # cost of the transaction is (targets + pieces/3 + sacrifice) * SPECIAL_SATOSHI
     # peices/3 because we include 3 pieces per output
-    tx_cost = (len(bitcoin_delivery_addresses) + math.ceil(len(bitcoin_message_pieces) / 3) + SACRIFICE) * SPECIAL_SATOSHI
-    if tx_cost > total_input_amount:
+    outputs_count = (len(bitcoin_delivery_addresses) + math.ceil(len(bitcoin_message_pieces) / 3))
+    approx_tx_cost = MINIMUM_SACRIFICE + outputs_count * SPECIAL_SATOSHI
+    if approx_tx_cost > total_input_amount:
         raise Exception("not enough inputs provided")
 
-    if total_input_amount > tx_cost:
+    tx_change_output = None
+    tx_change_output_n = None
+    if total_input_amount > approx_tx_cost:
         print('...output (change) to {}'.format(bitcoin_change_address))
-        tx_output = TransactionOutput(bitcoin_change_address, amount=total_input_amount - tx_cost)
-        tx.addOutput(tx_output)
+        tx_change_output = TransactionOutput(bitcoin_change_address, amount=total_input_amount - approx_tx_cost)
+        tx_change_output_n = tx.addOutput(tx_change_output)
 
     # The recipient will know how to handle this if they see their key...
     for i, bitcoin_delivery_address in enumerate(bitcoin_delivery_addresses):
@@ -344,10 +347,31 @@ def main():
         tx_output.setMultisig(pieces, 1)
         tx.addOutput(tx_output)
 
+    # we should now be able to figure out how much in fees is required now that the tx is built
+    recommended_fee = max(MINIMUM_SACRIFICE * SPECIAL_SATOSHI, tx.getRecommendedTransactionFee(per_kb=SACRIFICE_PER_KB))
+    recommended_tx_cost = recommended_fee + outputs_count * SPECIAL_SATOSHI
+    if recommended_tx_cost > total_input_amount:
+        raise Exception("not enough inputs provided ({} BTC required)".format(Bitcoin.format_money(recommended_tx_cost)))
+    
+    if tx_change_output is not None and recommended_tx_cost == total_input_amount:
+        # We can remove the output
+        tx.removeOutput(tx_change_output_n)
+        tx_change_output = None
+        
+    if recommended_tx_cost < total_input_amount:
+        if tx_change_output is None:
+            print('...output (change) to {}'.format(bitcoin_change_address))
+            tx_change_output = TransactionOutput(bitcoin_change_address)
+            tx_change_output_n = tx.addOutput(tx_change_output)
+        tx_change_output.amount = total_input_amount - recommended_tx_cost
+
+    print('...the fee for this transaction is {} BTC'.format(Bitcoin.format_money(tx.totalInput() - tx.totalOutput())))
+    print('...the total sent is {} BTC (change = {})'.format(Bitcoin.format_money(tx.totalInput()), Bitcoin.format_money(0 if tx_change_output is None else tx.outputs[tx_change_output_n].amount)))
+    
     # sign all inputs
     tx.sign()
 
-    print('...the transaction is {} bytes.'.format(len(tx.serialize())))
+    print('...the transaction is {} bytes.'.format(tx.size()))
 
     # Finally, do something with the transaction
     print('\n*** Step 6. The transaction is built. What would you like to do with it?')

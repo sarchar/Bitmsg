@@ -52,3 +52,4 @@ Some important tasks left to be done include:
 * Zero-bitcoin outputs (but this creates non-standard txns)
 * I would like all coins to be sacrificed (except change) to miners instead of throwing away a Satoshi for each output
 * Obscure the fact the transactions are messages by changing the trigger addressed based on the encryption key as well as use less predictable amounts for the outputs
+* Encryption using ECC (using Bitcoin pub/priv keypairs)
