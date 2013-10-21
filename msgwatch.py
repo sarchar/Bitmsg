@@ -12,7 +12,7 @@ from network import BitcoinNetwork
 from transaction import Transaction
 
 class Callbacks:
-    TX_TIMEOUT = 4 * 60 * 60
+    TX_TIMEOUT = 24 * 60 * 60
 
     def __init__(self):
         self.watched_addresses = {}
@@ -25,24 +25,29 @@ class Callbacks:
         key = b'\x00'
         address = addressgen.generate_address_from_data(key, version=0)
         self.watched_addresses[address] = (ENCRYPT_NONE, key)
+        print('Watching for messages to {}'.format(address))
 
     def watch_rc4(self, key):
         # Hash the key and add to watched addresses
         address = addressgen.generate_address_from_data(key, version=0)
         self.watched_addresses[address] = (ENCRYPT_RC4, key)
+        print('Watching for messages to {}'.format(address))
 
     def watch_aes128(self, key):
         # Hash the key and add to watched addresses
         address = addressgen.generate_address_from_data(key, version=0)
         self.watched_addresses[address] = (ENCRYPT_AES128, key)
+        print('Watching for messages to {}'.format(address))
 
     def watch_aes256(self, key):
         # Hash the key and add to watched addresses
         address = addressgen.generate_address_from_data(key, version=0)
         self.watched_addresses[address] = (ENCRYPT_AES256, key)
+        print('Watching for messages to {}'.format(address))
 
     def watch_rsa(self, private_key):
         self.rsa_private_keys.add(private_key)
+        # TOdO print('Watching for messages to {}'.format(address))
 
     def will_request_transaction(self, txhash):
         now = time.time()
@@ -270,9 +275,6 @@ def main():
 
     if done:
         return
-
-    for addr in cb.watched_addresses.keys():
-        print('Watching for messages to {}'.format(addr))
 
     # start network thread
     bitcoin_network = BitcoinNetwork(cb)

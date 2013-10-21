@@ -27,6 +27,11 @@ class RSA:
     def size(self):
         return addressgen.ssl_library.RSA_size(self.rsa)
 
+    def der(self):
+        bufp = ctypes.c_char_p()
+        sz = addressgen.ssl_library.i2d_RSAPrivateKey(self.rsa, ctypes.byref(bufp))
+        return bytes(ctypes.cast(bufp, ctypes.POINTER(ctypes.c_ubyte))[:sz])
+
 def get_random_bytes(b):
     buf = ctypes.create_string_buffer(b)
     ret = addressgen.ssl_library.RAND_bytes(buf, b)
@@ -40,6 +45,8 @@ def load_public_key(pem):
     bufio = addressgen.ssl_library.BIO_new_mem_buf(buf, len(pem))
 
     rsa = addressgen.ssl_library.PEM_read_bio_RSA_PUBKEY(bufio, None, 0, None)
+    if rsa == 0:
+        return None
 
     addressgen.ssl_library.BIO_free(bufio)
 
@@ -51,8 +58,19 @@ def load_private_key(pem):
     bufio = addressgen.ssl_library.BIO_new_mem_buf(buf, len(pem))
 
     rsa = addressgen.ssl_library.PEM_read_bio_RSAPrivateKey(bufio, None, 0, None)
+    if rsa == 0:
+        return None
 
     addressgen.ssl_library.BIO_free(bufio)
+
+    return RSA(rsa)
+
+def load_private_key_from_der(der):
+    sz = len(der)
+    der = ctypes.c_char_p(der)
+    rsa = addressgen.ssl_library.d2i_RSAPrivateKey(None, ctypes.byref(der), sz)
+    if rsa == 0:
+        return None
 
     return RSA(rsa)
 
