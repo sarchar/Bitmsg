@@ -258,6 +258,9 @@ def main():
         elif c == '-a':
             i += 1
             cb.watch_aes128(sys.argv[i].encode('utf8'))
+        elif c == '-b':
+            i += 1
+            cb.watch_aes256(sys.argv[i].encode('utf8'))
         elif c == '-p':
             cb.watch_public()
         elif c == '-r':

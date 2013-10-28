@@ -36,9 +36,12 @@ will help determine which messages you are able to receive.
 * -p : This will listen on the network for unencrypted, public messages.
 * -w key : This will listen on the network for encrypted (RC4) messages. You can specify '-w' multiple times.
 * -a key : This will listen on the network for encrypted (AES-128) messages. You can specify '-a' multiple times. AES-128 keys must be 16 bytes in length.
+* -b key : This will listen on the network for encrypted (AES-256) messages. You can specify '-b' multiple times. AES-256 keys must be 32 bytes in length.
+* -r file.key : This will listen on the network for encrypted (RSA + AES-256) messages. You can specify '-r' multiple times. RSA key files can be of any size.
 
-For example, "python msgwatch.py -p -w general -a mysecretkeyhello" will listen for messages that
-are encrypted with RC4 using the phrase "general" and with AES-128 using mysecretkeyhello.
+For example, "python msgwatch.py -p -w general -a mysecretkeyhello -r mykey.key" will listen for messages that
+are encrypted with RC4 using the phrase "general", with AES-128 using mysecretkeyhello, or messages delivered 
+to the RSA public key associated with file.key.
 
 TODO
 ====
@@ -47,9 +50,12 @@ Some important tasks left to be done include:
 
 * Proper internet message formatting
 * Parsing blocks and blockchain for transactions that were missed while offline
+  * This requires keeping track of the where you are at in the blockchain download
 * Relaying blocks and transactions
 * More configurable things such as the amount to sacrifice
 * Zero-bitcoin outputs (but this creates non-standard txns)
 * I would like all coins to be sacrificed (except change) to miners instead of throwing away a Satoshi for each output
 * Obscure the fact the transactions are messages by changing the trigger addressed based on the encryption key as well as use less predictable amounts for the outputs
-* Encryption using ECC (using Bitcoin pub/priv keypairs)
+* ECC encryption (using Bitcoin pub/priv keypairs)
+* Change to the m-of-n multisig embedding by making each of the pubkeys valid secp256k1 keys (use arbitrary data for the X coord, compute the Y coord)
+* A GUI to collect and save messages in a local db (in progress)
